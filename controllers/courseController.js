@@ -1,4 +1,7 @@
 import pool, { query } from "../config/db.js";
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 export const getCourses = async (req, res) => {
   try {
@@ -72,23 +75,106 @@ export const getCourseDetails = async (req, res) => {
   }
 };
 
-export const createCourse = async (req, res) => {
+export const getInstructors = async (req, res) => {
+  const conn = await pool.getConnection();
   try {
-    const { Title, Description, Price, ImageURL } = req.body;
+    const [rows] = await conn.query(
+      `SELECT u.UserID, u.FullName
+        FROM userroles ur
+        JOIN users u ON ur.UserID = u.UserID
+        WHERE ur.RoleID = 3;`
+    );
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch instructors" });
+  } finally {
+    conn.release();
+  }
+};
 
-    const [result] = await pool.query(
+// Cấu hình multer để lưu file
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = 'uploads/courses/';
+    // Tạo thư mục nếu chưa tồn tại
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    // Tạo tên file unique
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'course-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  // Chỉ cho phép file ảnh
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image files are allowed!'), false);
+  }
+};
+
+export const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB
+  }
+});
+
+export const createCourse = async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const { Title, Description, Price, InstructorID } = req.body;
+    
+    // Lấy đường dẫn ảnh nếu có upload
+    let ImageURL = null;
+    if (req.file) {
+      ImageURL = `/uploads/courses/${req.file.filename}`;
+    }
+
+    await conn.beginTransaction();
+
+    const [result] = await conn.query(
       `INSERT INTO courses (Title, Description, Price, ImageURL) VALUES (?, ?, ?, ?)`,
       [Title, Description, Price, ImageURL]
     );
 
-    res
-      .status(201)
-      .json({ message: "Course created", courseId: result.insertId });
+    const courseId = result.insertId;
+
+    await conn.query(
+      `INSERT INTO courseinstructors (CourseID, InstructorID) VALUES (?, ?)`,
+      [courseId, InstructorID]
+    );
+
+    await conn.commit();
+    res.status(201).json({ 
+      message: "Course created successfully", 
+      courseId,
+      imageUrl: ImageURL 
+    });
   } catch (err) {
+    await conn.rollback();
     console.error(err);
+    
+    // Xóa file đã upload nếu có lỗi
+    if (req.file) {
+      fs.unlink(req.file.path, (unlinkErr) => {
+        if (unlinkErr) console.error('Error deleting file:', unlinkErr);
+      });
+    }
+    
     res.status(500).json({ error: "Failed to create course" });
+  } finally {
+    conn.release();
   }
 };
+
 
 export const updateCourse = async (req, res) => {
   const { id } = req.params;
