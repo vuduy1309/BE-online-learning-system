@@ -1,7 +1,7 @@
 import pool, { query } from "../config/db.js";
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 export const getCourses = async (req, res) => {
   try {
@@ -12,9 +12,13 @@ export const getCourses = async (req, res) => {
         c.Description,
         c.Price,
         c.ImageURL,
-        ROUND(AVG(r.Rating), 1) as AverageRating
+        ROUND(AVG(r.Rating), 1) as AverageRating,
+        ANY_VALUE(u.FullName) AS InstructorName
       FROM courses c
       LEFT JOIN coursefeedback r ON c.CourseID = r.CourseID
+      LEFT JOIN courseinstructors ci ON ci.CourseID = c.CourseID
+      LEFT JOIN users u ON u.UserID = ci.InstructorID
+      WHERE Status = 'Active'
       GROUP BY c.CourseID
       ORDER BY c.CreatedAt DESC
     `);
@@ -96,7 +100,7 @@ export const getInstructors = async (req, res) => {
 // Cấu hình multer để lưu file
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadPath = 'uploads/courses/';
+    const uploadPath = "uploads/courses/";
     // Tạo thư mục nếu chưa tồn tại
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
@@ -105,33 +109,33 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     // Tạo tên file unique
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'course-' + uniqueSuffix + path.extname(file.originalname));
-  }
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "course-" + uniqueSuffix + path.extname(file.originalname));
+  },
 });
 
 const fileFilter = (req, file, cb) => {
   // Chỉ cho phép file ảnh
-  if (file.mimetype.startsWith('image/')) {
+  if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed!'), false);
+    cb(new Error("Only image files are allowed!"), false);
   }
 };
 
-export const upload = multer({ 
+export const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  }
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
 });
 
 export const createCourse = async (req, res) => {
   const conn = await pool.getConnection();
   try {
     const { Title, Description, Price, InstructorID } = req.body;
-    
+
     // Lấy đường dẫn ảnh nếu có upload
     let ImageURL = null;
     if (req.file) {
@@ -153,47 +157,116 @@ export const createCourse = async (req, res) => {
     );
 
     await conn.commit();
-    res.status(201).json({ 
-      message: "Course created successfully", 
+    res.status(201).json({
+      message: "Course created successfully",
       courseId,
-      imageUrl: ImageURL 
+      imageUrl: ImageURL,
     });
   } catch (err) {
     await conn.rollback();
     console.error(err);
-    
+
     // Xóa file đã upload nếu có lỗi
     if (req.file) {
       fs.unlink(req.file.path, (unlinkErr) => {
-        if (unlinkErr) console.error('Error deleting file:', unlinkErr);
+        if (unlinkErr) console.error("Error deleting file:", unlinkErr);
       });
     }
-    
+
     res.status(500).json({ error: "Failed to create course" });
   } finally {
     conn.release();
   }
 };
 
-
 export const updateCourse = async (req, res) => {
   const { id } = req.params;
-  const { Title, Description, Price, ImageURL, Status } = req.body;
+  const { Title, Description, Price, Status, InstructorID } = req.body;
+  const conn = await pool.getConnection();
 
   try {
-    const [result] = await pool.query(
+    let ImageURL = req.body.ImageURL;
+
+    // If a new image was uploaded, update the ImageURL
+    if (req.file) {
+      ImageURL = `/uploads/courses/${req.file.filename}`;
+
+      // If there was a previous image, you may want to delete it
+      // This would require first getting the old image path from the database
+      const [oldCourse] = await conn.query(
+        `SELECT ImageURL FROM courses WHERE CourseID = ?`,
+        [id]
+      );
+
+      if (oldCourse[0]?.ImageURL && oldCourse[0].ImageURL !== ImageURL) {
+        const oldImagePath = path.join(
+          process.cwd(),
+          oldCourse[0].ImageURL.replace("/", "")
+        );
+        // Check if file exists before trying to delete
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlink(oldImagePath, (err) => {
+            if (err) console.error("Error deleting old image:", err);
+          });
+        }
+      }
+    }
+
+    await conn.beginTransaction();
+
+    // Update course details
+    const [result] = await conn.query(
       `UPDATE courses SET Title = ?, Description = ?, Price = ?, ImageURL = ?, Status = ? WHERE CourseID = ?`,
       [Title, Description, Price, ImageURL, Status, id]
     );
+
+    // Update instructor if provided
+    if (InstructorID) {
+      // First check if there's an existing instructor record
+      const [existingInstructor] = await conn.query(
+        `SELECT * FROM courseinstructors WHERE CourseID = ?`,
+        [id]
+      );
+
+      if (existingInstructor.length > 0) {
+        // Update existing record
+        await conn.query(
+          `UPDATE courseinstructors SET InstructorID = ? WHERE CourseID = ?`,
+          [InstructorID, id]
+        );
+      } else {
+        // Create new record
+        await conn.query(
+          `INSERT INTO courseinstructors (CourseID, InstructorID) VALUES (?, ?)`,
+          [id, InstructorID]
+        );
+      }
+    }
+
+    await conn.commit();
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    res.json({ message: "Course updated successfully" });
+    res.json({
+      message: "Course updated successfully",
+      imageUrl: ImageURL,
+    });
   } catch (error) {
-    console.error(error);
+    await conn.rollback();
+    console.error("Error updating course:", error);
+
+    // If there was an error and we uploaded a new file, delete it
+    if (req.file) {
+      fs.unlink(req.file.path, (unlinkErr) => {
+        if (unlinkErr) console.error("Error deleting file:", unlinkErr);
+      });
+    }
+
     res.status(500).json({ error: "Failed to update course" });
+  } finally {
+    conn.release();
   }
 };
 
@@ -264,5 +337,86 @@ export const getCourseFeedback = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error fetching feedback." });
+  }
+};
+
+export const getCoursesByInstructor = async (req, res) => {
+  const instructorId = req.user.userId;
+
+  try {
+    const [courses] = await query(
+      `
+      SELECT 
+        c.CourseID,
+        c.Title,
+        c.Description,
+        c.Price,
+        c.ImageURL,
+        ROUND(AVG(cf.Rating), 1) AS Rating,
+        COUNT(DISTINCT e.EnrollmentID) AS EnrollmentCount,
+        COUNT(DISTINCT l.LessonID) AS LessonCount,
+        COUNT(DISTINCT lm.MaterialID) AS MaterialCount
+      FROM courses c
+        JOIN courseinstructors ci ON ci.CourseID = c.CourseID
+        LEFT JOIN coursefeedback cf ON cf.CourseID = c.CourseID
+        LEFT JOIN enrollments e ON e.CourseID = c.CourseID
+        LEFT JOIN lessons l ON l.CourseID = c.CourseID
+        LEFT JOIN lessonmaterials lm ON lm.LessonID = l.LessonID
+      WHERE ci.InstructorID = ?
+      GROUP BY c.CourseID
+      ORDER BY c.CreatedAt DESC
+    `,
+      [instructorId]
+    );
+
+    res.json(courses);
+  } catch (error) {
+    console.error("Error fetching instructor courses:", error);
+    res.status(500).json({ message: "Failed to fetch instructor's courses." });
+  }
+};
+
+export const viewLessons = async (req, res) => {
+  const courseId = req.params.id;
+
+  try {
+    const [courseResults] = await query(
+      `SELECT 
+         CourseID, 
+         Title, 
+         Description 
+       FROM courses 
+       WHERE CourseID = ?`,
+      [courseId]
+    );
+
+    if (courseResults.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    const course = courseResults[0];
+
+    const [lessons] = await query(
+      `SELECT 
+         LessonID, 
+         Title, 
+         Introduction 
+       FROM lessons 
+       WHERE CourseID = ? 
+       ORDER BY OrderNumber ASC`,
+      [courseId]
+    );
+
+    res.json({
+      success: true,
+      course,
+      lessons,
+    });
+  } catch (error) {
+    console.error("Error fetching course with lessons:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };

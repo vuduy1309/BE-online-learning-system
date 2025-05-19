@@ -90,24 +90,40 @@ export const buyNow = async (req, res) => {
 
 export const getCart = async (req, res) => {
   const { userId } = req.user;
-
+  
   try {
     const [[cart]] = await pool.query(
       `SELECT * FROM carts WHERE UserID = ? AND Status = 'pending'`,
       [userId]
     );
-
+    
     if (!cart) return res.json({ items: [], totalPrice: 0 });
-
+    
     const [items] = await pool.query(
-      `SELECT ci.CartItemID, ci.CourseID, ci.Price, c.Title, c.ImageURL, c.Description 
-       FROM cartitems ci 
-       JOIN courses c ON ci.CourseID = c.CourseID 
-       WHERE ci.CartID = ?`,
+      `SELECT 
+        ci.CartItemID, 
+        ci.CourseID, 
+        ci.Price, 
+        c.Title, 
+        c.ImageURL, 
+        c.Description
+      FROM cartitems ci
+      JOIN courses c ON ci.CourseID = c.CourseID
+      WHERE ci.CartID = ?`,
       [cart.CartID]
     );
-
-    res.json({ items, totalPrice: cart.TotalPrice });
+    
+    // Ensure ImageURL is properly formatted
+    const formattedItems = items.map(item => ({
+      ...item,
+      // Make sure ImageURL starts with a slash if it's a relative path
+      // This will ensure the Image component can properly format it
+      ImageURL: item.ImageURL && !item.ImageURL.startsWith('/') && !item.ImageURL.startsWith('http') 
+        ? `/${item.ImageURL}` 
+        : item.ImageURL
+    }));
+    
+    res.json({ items: formattedItems, totalPrice: cart.TotalPrice });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch cart" });

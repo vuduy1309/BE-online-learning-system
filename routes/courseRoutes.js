@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import {
   createCourse,
@@ -9,18 +10,22 @@ import {
   getCourseFeedback,
   getInstructors,
   upload,
+  getCoursesByInstructor,
+  viewLessons,
 } from "../controllers/courseController.js";
+import { authenticateToken } from "../middlewares/authMiddleware.js";
 
 const router = Router();
 
 router.get('/instructors', getInstructors);
 router.get("/listCourse", getListCourses);
+router.get("/:id/lessons", viewLessons);
+router.get("/instructorCourses", authenticateToken, getCoursesByInstructor);
 router.get("/getCourseById/:id", getCourseById);
 router.get("/", getCourses);
 router.get("/:id", getCourseDetails);
-// Thêm upload.single('image') middleware
 router.post("/create", upload.single('image'), createCourse);
-router.put("/update/:id", updateCourse);
+router.put("/update/:id", upload.single('image'), updateCourse);
 router.get("/:courseId/feedback", getCourseFeedback);
 
 export default router;
