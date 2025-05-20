@@ -114,9 +114,15 @@ export const updateQuiz = async (req, res) => {
       const questionId = questionResult.insertId;
 
       for (const option of q.AnswerOptions) {
+        
+        const isCorrect =
+          typeof option.IsCorrect === "object" && option.IsCorrect?.type === "Buffer"
+            ? option.IsCorrect.data[0] === 1
+            : !!option.IsCorrect;
+
         await conn.query(
           `INSERT INTO answeroptions (QuestionID, Content, IsCorrect) VALUES (?, ?, ?)`,
-          [questionId, option.Content, option.IsCorrect]
+          [questionId, option.Content, isCorrect]
         );
       }
     }
@@ -129,5 +135,40 @@ export const updateQuiz = async (req, res) => {
     res.status(500).json({ message: "Failed to update quiz" });
   } finally {
     conn.release();
+  }
+};
+
+
+// controllers/quizController.js
+export const viewQuizById = async (req, res) => {
+  const { quizId } = req.params;
+  try {
+    const [[quiz]] = await pool.query(
+      `SELECT * FROM quizzes WHERE QuizID = ?`,
+      [quizId]
+    );
+
+    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+
+    const [questions] = await pool.query(
+      `SELECT * FROM questions WHERE QuizID = ?`,
+      [quiz.QuizID]
+    );
+
+    for (const question of questions) {
+      const [options] = await pool.query(
+        `SELECT * FROM answeroptions WHERE QuestionID = ?`,
+        [question.QuestionID]
+      );
+      question.AnswerOptions = options;
+    }
+
+    res.json({
+      ...quiz,
+      Questions: questions,
+    });
+  } catch (error) {
+    console.error("Error fetching quiz:", error);
+    res.status(500).json({ message: "Failed to fetch quiz" });
   }
 };

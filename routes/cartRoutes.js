@@ -1,5 +1,10 @@
 import { Router } from "express";
-import { addToCart, buyNow, getCart, getCheckoutDetails } from "../controllers/cartController.js";
+import {
+  addToCart,
+  buyNow,
+  getCart,
+  getCheckoutDetails,
+} from "../controllers/cartController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 
 const router = Router();

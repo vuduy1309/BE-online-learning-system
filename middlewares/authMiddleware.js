@@ -13,7 +13,6 @@ export function authenticateToken(req, res, next) {
       return res.status(403).json({ message: "Invalid or expired token" });
     }
 
-    // Gắn user info vào req.user để dùng sau này
     req.user = {
       userId: decoded.id,
       email: decoded.email,

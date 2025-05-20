@@ -129,3 +129,49 @@ export const addMaterial = async (req, res) => {
       .json({ success: false, message: "Internal server error" });
   }
 };
+
+export const deleteMaterial = async (req, res) => {
+  const { courseId, lessonId, materialId } = req.params;
+
+  try {
+    // Kiểm tra xem bài học có tồn tại trong khóa học không
+    const [[lesson]] = await pool.query(
+      `SELECT * FROM lessons WHERE LessonID = ? AND CourseID = ?`,
+      [lessonId, courseId]
+    );
+
+    if (!lesson) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Lesson not found in this course" });
+    }
+
+    // Kiểm tra xem material có tồn tại không
+    const [[material]] = await pool.query(
+      `SELECT * FROM lessonmaterials WHERE MaterialID = ? AND LessonID = ?`,
+      [materialId, lessonId]
+    );
+
+    if (!material) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Material not found" });
+    }
+
+    // Xóa material
+    await pool.query(
+      `DELETE FROM lessonmaterials WHERE MaterialID = ? AND LessonID = ?`,
+      [materialId, lessonId]
+    );
+
+    return res.json({
+      success: true,
+      message: "Material deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting material:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
