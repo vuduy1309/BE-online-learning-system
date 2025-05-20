@@ -6,6 +6,7 @@ import courseRoutes from "./routes/courseRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import lessonRoutes from "./routes/lessonRoutes.js";
+import quizRoutes from "./routes/quizRoutes.js";
 config();
 
 const app = express();
@@ -18,6 +19,7 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api", lessonRoutes);
+app.use("/api/quizzes", quizRoutes);
 app.use("/uploads", express.static("uploads"));
 
 const PORT = process.env.PORT || 8080;
