@@ -16,8 +16,10 @@ export function authenticateToken(req, res, next) {
     req.user = {
       userId: decoded.id,
       email: decoded.email,
+      role: decoded.role,
     };
 
     next();
   });
 }
+

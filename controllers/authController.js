@@ -21,8 +21,6 @@ export async function register(req, res) {
   }
 }
 
-
-
 export async function login(req, res) {
   const { email, password } = req.body;
 
@@ -37,7 +35,11 @@ export async function login(req, res) {
     const roleId = await getUserRole(foundUser.UserID);
 
     const token = sign(
-      { id: foundUser.UserID, email: foundUser.Email },
+      {
+        id: foundUser.UserID,
+        email: foundUser.Email,
+        role: roleId,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -48,7 +50,7 @@ export async function login(req, res) {
         id: foundUser.UserID,
         email: foundUser.Email,
         fullName: foundUser.FullName,
-        roleId
+        roleId,
       },
     });
   } catch (err) {

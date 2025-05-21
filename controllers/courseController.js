@@ -2,6 +2,8 @@ import pool, { query } from "../config/db.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { validateCourse } from "../middlewares/courseValidator";
+import { validationResult } from "express-validator";
 
 export const getCourses = async (req, res) => {
   try {
@@ -130,54 +132,62 @@ export const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB
   },
 });
+export const createCourse = [
+  validateCourse,
+  async (req, res) => {
+    const conn = await pool.getConnection();
 
-export const createCourse = async (req, res) => {
-  const conn = await pool.getConnection();
-  try {
-    const { Title, Description, Price, InstructorID } = req.body;
-
-    // Lấy đường dẫn ảnh nếu có upload
-    let ImageURL = null;
-    if (req.file) {
-      ImageURL = `/uploads/courses/${req.file.filename}`;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // Nếu có lỗi validate
+      return res.status(400).json({ errors: errors.array() });
     }
 
-    await conn.beginTransaction();
+    try {
+      const { Title, Description, Price, InstructorID } = req.body;
 
-    const [result] = await conn.query(
-      `INSERT INTO courses (Title, Description, Price, ImageURL) VALUES (?, ?, ?, ?)`,
-      [Title, Description, Price, ImageURL]
-    );
+      let ImageURL = null;
+      if (req.file) {
+        ImageURL = `/uploads/courses/${req.file.filename}`;
+      }
 
-    const courseId = result.insertId;
+      await conn.beginTransaction();
 
-    await conn.query(
-      `INSERT INTO courseinstructors (CourseID, InstructorID) VALUES (?, ?)`,
-      [courseId, InstructorID]
-    );
+      const [result] = await conn.query(
+        `INSERT INTO courses (Title, Description, Price, ImageURL) VALUES (?, ?, ?, ?)`,
+        [Title, Description, Price, ImageURL]
+      );
 
-    await conn.commit();
-    res.status(201).json({
-      message: "Course created successfully",
-      courseId,
-      imageUrl: ImageURL,
-    });
-  } catch (err) {
-    await conn.rollback();
-    console.error(err);
+      const courseId = result.insertId;
 
-    // Xóa file đã upload nếu có lỗi
-    if (req.file) {
-      fs.unlink(req.file.path, (unlinkErr) => {
-        if (unlinkErr) console.error("Error deleting file:", unlinkErr);
+      await conn.query(
+        `INSERT INTO courseinstructors (CourseID, InstructorID) VALUES (?, ?)`,
+        [courseId, InstructorID]
+      );
+
+      await conn.commit();
+
+      res.status(201).json({
+        message: "Course created successfully",
+        courseId,
+        imageUrl: ImageURL,
       });
-    }
+    } catch (err) {
+      await conn.rollback();
+      console.error(err);
 
-    res.status(500).json({ error: "Failed to create course" });
-  } finally {
-    conn.release();
-  }
-};
+      if (req.file) {
+        fs.unlink(req.file.path, (unlinkErr) => {
+          if (unlinkErr) console.error("Error deleting file:", unlinkErr);
+        });
+      }
+
+      res.status(500).json({ error: "Failed to create course" });
+    } finally {
+      conn.release();
+    }
+  },
+];
 
 export const updateCourse = async (req, res) => {
   const { id } = req.params;
@@ -288,26 +298,30 @@ export const getCourseById = async (req, res) => {
 };
 
 export const getListCourses = async (req, res) => {
+  if (!req.user || req.user.role !== 2) {
+    return res.status(403).json({ message: "Access denied. Only instructors can access this." });
+  }
+
   try {
     const [rows] = await query(`
-    SELECT 
-        c.CourseID,
-        c.Title,
-        c.Description,
-        c.Price,
-        ROUND(AVG(cf.Rating), 1) AS Rating,
-        COUNT(DISTINCT e.EnrollmentID) AS EnrollmentCount,
-        COUNT(DISTINCT l.LessonID) AS LessonCount,
-        COUNT(DISTINCT lm.MaterialID) AS MaterialCount,
-        ANY_VALUE(u.FullName) AS InstructorName
-    FROM courses c
-        LEFT JOIN coursefeedback cf ON cf.CourseID = c.CourseID
-        LEFT JOIN enrollments e ON e.CourseID = c.CourseID
-        LEFT JOIN lessons l ON l.CourseID = c.CourseID
-        LEFT JOIN lessonmaterials lm ON lm.LessonID = l.LessonID
-        LEFT JOIN courseinstructors ci ON ci.CourseID = c.CourseID
-        LEFT JOIN users u ON u.UserID = ci.InstructorID
-        GROUP BY c.CourseID
+      SELECT 
+          c.CourseID,
+          c.Title,
+          c.Description,
+          c.Price,
+          ROUND(AVG(cf.Rating), 1) AS Rating,
+          COUNT(DISTINCT e.EnrollmentID) AS EnrollmentCount,
+          COUNT(DISTINCT l.LessonID) AS LessonCount,
+          COUNT(DISTINCT lm.MaterialID) AS MaterialCount,
+          ANY_VALUE(u.FullName) AS InstructorName
+      FROM courses c
+          LEFT JOIN coursefeedback cf ON cf.CourseID = c.CourseID
+          LEFT JOIN enrollments e ON e.CourseID = c.CourseID
+          LEFT JOIN lessons l ON l.CourseID = c.CourseID
+          LEFT JOIN lessonmaterials lm ON lm.LessonID = l.LessonID
+          LEFT JOIN courseinstructors ci ON ci.CourseID = c.CourseID
+          LEFT JOIN users u ON u.UserID = ci.InstructorID
+      GROUP BY c.CourseID
     `);
     res.json(rows);
   } catch (err) {
@@ -315,6 +329,7 @@ export const getListCourses = async (req, res) => {
     res.status(500).json({ message: "Error fetching course data." });
   }
 };
+
 
 export const getCourseFeedback = async (req, res) => {
   const { courseId } = req.params;

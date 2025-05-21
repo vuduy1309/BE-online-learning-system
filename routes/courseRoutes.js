@@ -12,19 +12,66 @@ import {
   getCoursesByInstructor,
   viewLessons,
 } from "../controllers/courseController.js";
+
 import { authenticateToken } from "../middlewares/authMiddleware.js";
+
+import { handleValidationErrors } from "../middlewares/handleValidationErrors.js";
+import { validateCourse } from "../middlewares/courseValidator";
+import {
+  validateCourseIdParam,
+  validateIdParam,
+} from "../middlewares/validateIdParam.js";
+import { authorizeRole } from "../middlewares/roleMiddleware.js";
 
 const router = Router();
 
 router.get("/instructors", getInstructors);
-router.get("/listCourse", getListCourses);
-router.get("/:id/lessons", viewLessons);
-router.get("/instructorCourses", authenticateToken, getCoursesByInstructor);
-router.get("/getCourseById/:id", getCourseById);
+router.get("/listCourse", authenticateToken, authorizeRole(2), getListCourses);
+router.get(
+  "/:id/lessons",
+  validateIdParam,
+  authenticateToken,
+  authorizeRole(3),
+  viewLessons
+);
+router.get(
+  "/instructorCourses",
+  authenticateToken,
+  authorizeRole(3),
+  getCoursesByInstructor
+);
+router.get(
+  "/getCourseById/:id",
+  validateIdParam,
+  authorizeRole(2),
+  getCourseById
+);
 router.get("/", getCourses);
-router.get("/:id", getCourseDetails);
-router.post("/create", upload.single("image"), createCourse);
-router.put("/update/:id", upload.single("image"), updateCourse);
-router.get("/:courseId/feedback", getCourseFeedback);
+router.get("/:id", validateIdParam, getCourseDetails);
+
+router.post(
+  "/create",
+  upload.single("image"),
+  validateCourse,
+  handleValidationErrors,
+  authorizeRole(2),
+  createCourse
+);
+
+router.put(
+  "/update/:id",
+  upload.single("image"),
+  validateCourse,
+  handleValidationErrors,
+  authorizeRole(2),
+  updateCourse
+);
+
+router.get(
+  "/:courseId/feedback",
+  validateCourseIdParam,
+  getCourseFeedback,
+  authorizeRole(2)
+);
 
 export default router;
