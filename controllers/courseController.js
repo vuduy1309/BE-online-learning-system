@@ -2,7 +2,7 @@ import pool, { query } from "../config/db.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { validateCourse } from "../middlewares/courseValidator";
+import { validateCourse } from "../middlewares/courseValidator.js";
 import { validationResult } from "express-validator";
 
 export const getCourses = async (req, res) => {

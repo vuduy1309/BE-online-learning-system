@@ -16,7 +16,7 @@ import {
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 
 import { handleValidationErrors } from "../middlewares/handleValidationErrors.js";
-import { validateCourse } from "../middlewares/courseValidator";
+import { validateCourse } from "../middlewares/courseValidator.js";
 import {
   validateCourseIdParam,
   validateIdParam,

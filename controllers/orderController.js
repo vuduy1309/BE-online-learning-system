@@ -10,7 +10,7 @@ export const confirmOrder = async (req, res) => {
       `SELECT * FROM carts WHERE CartID = ? AND UserID = ? AND (Status = 'pending' OR Status = 'buy_now')`,
       [cartId, userId]
     );
-    
+
     if (!cart) return res.status(400).json({ message: "Cart not valid" });
 
     // Tạo order
@@ -47,3 +47,71 @@ export const confirmOrder = async (req, res) => {
     res.status(500).json({ error: "Failed to confirm order" });
   }
 };
+
+export const getAllOrders = async (req, res) => {
+  try {
+    const [orders] = await pool.query(`
+      SELECT 
+        o.OrderID,
+        o.UserID,
+        u.FullName,
+        o.OrderDate,
+        o.TotalAmount,
+        o.PaymentStatus,
+        o.PaymentMethod
+      FROM orders o
+      JOIN users u ON o.UserID = u.UserID
+      ORDER BY o.OrderDate DESC
+    `);
+
+    res.json(orders);
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
+
+export const updateOrderSatus = async (req, res) => {
+  const { orderId } = req.params;
+  const { status } = req.body;
+  try {
+    await pool.query(
+      `
+      UPDATE orders Set PaymentStatus = ? WHERE OrderID = ?
+      `,
+      [status, orderId]
+    );
+    res.json({ message: "Payment status update successfully." });
+  } catch (err) {
+    console.error("Error updating status:", err);
+    res.status(500).json({ message: "Failed to update status" });
+  }
+};
+
+export const viewOrderDetails = async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    const [details] = await pool.query(
+      `
+      SELECT 
+        od.OrderDetailID,
+        od.OrderID,
+        od.CourseID,
+        od.Price,
+        c.Title,
+        c.Description
+      FROM orderdetails od
+      JOIN courses c ON od.CourseID = c.CourseID
+      WHERE od.OrderID = ?
+      `,
+      [orderId]
+    );
+
+    res.json(details);
+  } catch (err) {
+    console.error("Error fetch order details:", err);
+    res.status(500).json({ message: "Failed to view order details" });
+  }
+};
+
