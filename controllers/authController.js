@@ -2,6 +2,7 @@ import { hash, compare } from "bcryptjs";
 import * as userModel from "../models/user.js";
 import { findUserByEmail, getUserRole } from "../models/user.js";
 import jwt from "jsonwebtoken";
+import pool from "../config/db.js";
 const { sign } = jwt;
 
 export async function register(req, res) {
@@ -20,6 +21,22 @@ export async function register(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+export const getAllUsers = async (req, res) => {
+  try {
+    const [users] = await pool.query(
+      `SELECT UserID, FullName, Email FROM users`
+    );
+    res.json(users);
+  } catch (error) {
+    console.error("Error fetching users:", error); // Log chi tiết lỗi trên server
+    res.status(500).json({
+      message: "Failed to fetch users",
+      error: error.message, // Gửi thông báo lỗi cụ thể
+    });
+  }
+};
+
 
 export async function login(req, res) {
   const { email, password } = req.body;
