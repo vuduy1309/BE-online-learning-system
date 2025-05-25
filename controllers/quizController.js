@@ -114,9 +114,9 @@ export const updateQuiz = async (req, res) => {
       const questionId = questionResult.insertId;
 
       for (const option of q.AnswerOptions) {
-        
         const isCorrect =
-          typeof option.IsCorrect === "object" && option.IsCorrect?.type === "Buffer"
+          typeof option.IsCorrect === "object" &&
+          option.IsCorrect?.type === "Buffer"
             ? option.IsCorrect.data[0] === 1
             : !!option.IsCorrect;
 
@@ -138,8 +138,6 @@ export const updateQuiz = async (req, res) => {
   }
 };
 
-
-// controllers/quizController.js
 export const viewQuizById = async (req, res) => {
   const { quizId } = req.params;
   try {
@@ -170,5 +168,233 @@ export const viewQuizById = async (req, res) => {
   } catch (error) {
     console.error("Error fetching quiz:", error);
     res.status(500).json({ message: "Failed to fetch quiz" });
+  }
+};
+
+export const getQuizById = async (req, res) => {
+  const { quizId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Check if the user is enrolled in the course this quiz belongs to
+    const [enrollCheck] = await pool.query(
+      `
+      SELECT q.QuizID
+      FROM quizzes q
+      JOIN lessons l ON q.LessonID = l.LessonID
+      JOIN courses c ON l.CourseID = c.CourseID
+      JOIN enrollments e ON c.CourseID = e.CourseID
+      WHERE q.QuizID = ? AND e.UserID = ?
+    `,
+      [quizId, userId]
+    );
+
+    if (enrollCheck.length === 0) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    // Get quiz info
+    const [[quiz]] = await pool.query(
+      `SELECT QuizID, Title FROM quizzes WHERE QuizID = ?`,
+      [quizId]
+    );
+
+    if (!quiz) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Quiz not found" });
+    }
+
+    // Get questions
+    const [questions] = await pool.query(
+      `SELECT QuestionID, Content, ImageURL FROM questions WHERE QuizID = ?`,
+      [quizId]
+    );
+
+    // Get all options
+    const [allOptions] = await pool.query(
+      `SELECT OptionID, QuestionID, Content FROM answeroptions WHERE QuestionID IN (?)`,
+      [questions.map((q) => q.QuestionID)]
+    );
+
+    // Combine questions with their options
+    const formattedQuestions = questions.map((question) => ({
+      questionId: question.QuestionID,
+      content: question.Content,
+      imageUrl: question.ImageURL,
+      options: allOptions
+        .filter((opt) => opt.QuestionID === question.QuestionID)
+        .map((opt) => ({
+          optionId: opt.OptionID,
+          content: opt.Content,
+        })),
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        quizId: quiz.QuizID,
+        title: quiz.Title,
+        questions: formattedQuestions,
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching quiz:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const takeQuiz = async (req, res) => {
+  const { quizId } = req.params;
+  const userId = req.user.userId;
+  const { answers } = req.body; // [{ questionId, selectedOptionId }]
+
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+
+  try {
+    // Tính điểm
+    let correctCount = 0;
+
+    for (const answer of answers) {
+      const [correctOption] = await conn.query(
+        `SELECT IsCorrect FROM answeroptions WHERE OptionID = ?`,
+        [answer.selectedOptionId]
+      );
+
+      let isCorrect = false;
+      if (correctOption.length) {
+        const val = correctOption[0].IsCorrect;
+        isCorrect = Buffer.isBuffer(val) ? val[0] === 1 : val === 1;
+      }
+      if (isCorrect) {
+        correctCount++;
+      }
+    }
+
+    const totalQuestions = answers.length;
+    const score = (correctCount / totalQuestions) * 100;
+
+    // Insert userquizattempts
+    const [attemptResult] = await conn.query(
+      `INSERT INTO userquizattempts (UserID, QuizID, Score, AttemptDate)
+       VALUES (?, ?, ?, NOW())`,
+      [userId, quizId, score]
+    );
+
+    const attemptId = attemptResult.insertId;
+
+    // Insert từng câu trả lời vào useranswers
+    for (const answer of answers) {
+      await conn.query(
+        `INSERT INTO useranswers (AttemptID, QuestionID, SelectedOptionID)
+         VALUES (?, ?, ?)`,
+        [attemptId, answer.questionId, answer.selectedOptionId]
+      );
+    }
+
+    await conn.commit();
+
+    res.json({
+      success: true,
+      message: "Quiz submitted successfully",
+      data: {
+        attemptId,
+        score,
+        totalQuestions,
+        correctAnswers: correctCount,
+      },
+    });
+  } catch (error) {
+    await conn.rollback();
+    console.error("Error taking quiz:", error);
+    res.status(500).json({ success: false, message: "Failed to take quiz" });
+  } finally {
+    conn.release();
+  }
+};
+
+
+export const getLessonQuizScores = async (req, res) => {
+  const { lessonId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Lấy danh sách quiz của lesson
+    const [quizzes] = await pool.query(
+      `SELECT QuizID, Title FROM quizzes WHERE LessonID = ?`,
+      [lessonId]
+    );
+
+    // Lấy điểm số gần nhất và tốt nhất của user cho từng quiz
+    const [scores] = await pool.query(
+      `SELECT 
+          QuizID, 
+          MAX(Score) AS bestScore, 
+          (SELECT Score FROM userquizattempts WHERE UserID = ? AND QuizID = q.QuizID ORDER BY AttemptDate DESC LIMIT 1) AS latestScore
+        FROM userquizattempts q
+        WHERE UserID = ? AND QuizID IN (SELECT QuizID FROM quizzes WHERE LessonID = ?)
+        GROUP BY QuizID`,
+      [userId, userId, lessonId]
+    );
+
+    // Gộp dữ liệu
+    const quizList = quizzes.map((q) => {
+      const score = scores.find((s) => s.QuizID === q.QuizID) || {};
+      return {
+        quizId: q.QuizID,
+        title: q.Title,
+        bestScore: score.bestScore || null,
+        latestScore: score.latestScore || null,
+      };
+    });
+
+    res.json({ success: true, data: quizList });
+  } catch (error) {
+    console.error("Error fetching lesson quiz scores:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch lesson quiz scores" });
+  }
+};
+
+export const getUserQuizHistory = async (req, res) => {
+  const { quizId } = req.params;
+  const userId = req.user.userId;
+
+  try {
+    // Lấy lịch sử làm quiz của user
+    const [attempts] = await pool.query(
+      `SELECT AttemptID, Score, AttemptDate FROM userquizattempts WHERE QuizID = ? AND UserID = ? ORDER BY AttemptDate DESC`,
+      [quizId, userId]
+    );
+
+    // Lấy chi tiết câu trả lời cho từng attempt
+    for (const attempt of attempts) {
+      const [answers] = await pool.query(
+        `SELECT ua.QuestionID, q.Content AS QuestionContent, ua.SelectedOptionID, ao.Content AS SelectedOptionContent, ao.IsCorrect
+         FROM useranswers ua
+         JOIN questions q ON ua.QuestionID = q.QuestionID
+         JOIN answeroptions ao ON ua.SelectedOptionID = ao.OptionID
+         WHERE ua.AttemptID = ?`,
+        [attempt.AttemptID]
+      );
+      attempt.answers = answers.map((a) => ({
+        questionId: a.QuestionID,
+        questionContent: a.QuestionContent,
+        selectedOptionId: a.SelectedOptionID,
+        selectedOptionContent: a.SelectedOptionContent,
+        isCorrect: Buffer.isBuffer(a.IsCorrect)
+          ? a.IsCorrect[0] === 1
+          : a.IsCorrect === 1,
+      }));
+    }
+
+    res.json({ success: true, data: attempts });
+  } catch (error) {
+    console.error("Error fetching user quiz history:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch user quiz history" });
   }
 };

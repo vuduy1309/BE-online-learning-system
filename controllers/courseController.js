@@ -299,7 +299,9 @@ export const getCourseById = async (req, res) => {
 
 export const getListCourses = async (req, res) => {
   if (!req.user || req.user.role !== 2) {
-    return res.status(403).json({ message: "Access denied. Only instructors can access this." });
+    return res
+      .status(403)
+      .json({ message: "Access denied. Only instructors can access this." });
   }
 
   try {
@@ -329,7 +331,6 @@ export const getListCourses = async (req, res) => {
     res.status(500).json({ message: "Error fetching course data." });
   }
 };
-
 
 export const getCourseFeedback = async (req, res) => {
   const { courseId } = req.params;
@@ -435,3 +436,26 @@ export const viewLessons = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
+
+export const enrolledCoures = async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const [courses] = await pool.query(
+      `
+      SELECT DISTINCT c.CourseID, c.Title, c.Description, c.Price, c.ImageURL
+      FROM enrollments e
+      JOIN courses c ON e.CourseID = c.CourseID
+      WHERE e.UserID = ?
+    `,
+      [userId]
+    );
+
+    res.json(courses);
+  } catch (err) {
+    console.error("Error fetching enrolled courses:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+

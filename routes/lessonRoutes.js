@@ -2,7 +2,11 @@ import express from "express";
 import {
   addMaterial,
   deleteMaterial,
+  getAvailableLessons,
+  getLesson,
   getLessonDetails,
+  getLessonMaterials,
+  getLessonQuizzes,
   updateLesson,
 } from "../controllers/lessonController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
@@ -34,4 +38,7 @@ router.delete(
   authorizeRole(3),
   deleteMaterial
 );
+router.get('/:lessonId', authenticateToken , getLesson);
+router.get('/:lessonId/materials', authenticateToken, getLessonMaterials);
+router.get('/:lessonId/quizzes', authenticateToken, getLessonQuizzes);
 export default router;

@@ -75,18 +75,43 @@ export const updateOrderSatus = async (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
   try {
+    // 1. Cập nhật trạng thái
     await pool.query(
-      `
-      UPDATE orders Set PaymentStatus = ? WHERE OrderID = ?
-      `,
+      `UPDATE orders SET PaymentStatus = ? WHERE OrderID = ?`,
       [status, orderId]
     );
-    res.json({ message: "Payment status update successfully." });
+
+    // 2. Nếu là "paid", thì enroll user vào các khóa học
+    if (status === 'paid') {
+      // Lấy UserID từ đơn hàng
+      const [[order]] = await pool.query(
+        `SELECT UserID FROM orders WHERE OrderID = ?`,
+        [orderId]
+      );
+      const userId = order.UserID;
+
+      // Lấy danh sách khóa học
+      const [courseList] = await pool.query(
+        `SELECT CourseID FROM orderdetails WHERE OrderID = ?`,
+        [orderId]
+      );
+
+      // Enroll từng khóa học
+      for (const { CourseID } of courseList) {
+        await pool.query(
+          `INSERT IGNORE INTO enrollments (UserID, CourseID) VALUES (?, ?)`,
+          [userId, CourseID]
+        );
+      }
+    }
+
+    res.json({ message: "Payment status updated successfully." });
   } catch (err) {
     console.error("Error updating status:", err);
     res.status(500).json({ message: "Failed to update status" });
   }
 };
+
 
 export const viewOrderDetails = async (req, res) => {
   const { orderId } = req.params;

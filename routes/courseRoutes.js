@@ -11,6 +11,7 @@ import {
   upload,
   getCoursesByInstructor,
   viewLessons,
+  enrolledCoures,
 } from "../controllers/courseController.js";
 
 import { authenticateToken } from "../middlewares/authMiddleware.js";
@@ -25,13 +26,13 @@ import { authorizeRole } from "../middlewares/roleMiddleware.js";
 
 const router = Router();
 
+router.get("/enrollments/my-courses", authenticateToken, enrolledCoures);
 router.get("/instructors", getInstructors);
 router.get("/listCourse", authenticateToken, authorizeRole(2), getListCourses);
 router.get(
   "/:id/lessons",
   validateIdParam,
   authenticateToken,
-  authorizeRole(3),
   viewLessons
 );
 router.get(
@@ -42,8 +43,6 @@ router.get(
 );
 router.get(
   "/getCourseById/:id",
-  validateIdParam,
-  authorizeRole(2),
   getCourseById
 );
 router.get("/", getCourses);
@@ -61,17 +60,17 @@ router.post(
 router.put(
   "/update/:id",
   upload.single("image"),
-  validateCourse,
   handleValidationErrors,
-  authorizeRole(2),
   updateCourse
 );
 
 router.get(
   "/:courseId/feedback",
   validateCourseIdParam,
+  authenticateToken,
   getCourseFeedback,
   authorizeRole(2)
 );
+
 
 export default router;
