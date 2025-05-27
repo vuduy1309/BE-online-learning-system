@@ -4,7 +4,6 @@ export const getLessonDetails = async (req, res) => {
   const { courseId, lessonId } = req.params;
 
   try {
-    // Lấy thông tin bài học
     const [[lesson]] = await pool.query(
       `SELECT * FROM lessons WHERE LessonID = ? AND CourseID = ?`,
       [lessonId, courseId]
@@ -16,13 +15,11 @@ export const getLessonDetails = async (req, res) => {
         .json({ success: false, message: "Lesson not found" });
     }
 
-    // Lấy materials của bài học
     const [materials] = await pool.query(
       `SELECT * FROM lessonmaterials WHERE LessonID = ?`,
       [lessonId]
     );
 
-    // Lấy quizzes của bài học
     const [quizzes] = await pool.query(
       `SELECT * FROM quizzes WHERE LessonID = ?`,
       [lessonId]
@@ -47,7 +44,6 @@ export const updateLesson = async (req, res) => {
   const { Title, Introduction, Content, Example, OrderNumber } = req.body;
 
   try {
-    // Kiểm tra xem bài học có tồn tại không
     const [[existingLesson]] = await pool.query(
       `SELECT * FROM lessons WHERE LessonID = ? AND CourseID = ?`,
       [lessonId, courseId]
@@ -94,7 +90,6 @@ export const addMaterial = async (req, res) => {
   }
 
   try {
-    // Kiểm tra bài học có tồn tại không
     const [[lesson]] = await pool.query(
       `SELECT * FROM lessons WHERE LessonID = ?`,
       [lessonId]
@@ -106,7 +101,6 @@ export const addMaterial = async (req, res) => {
         .json({ success: false, message: "Lesson not found" });
     }
 
-    // Thêm material mới
     const [result] = await pool.query(
       `INSERT INTO lessonmaterials (LessonID, MaterialType, URL) VALUES (?, ?, ?)`,
       [lessonId, MaterialType, URL]
@@ -134,7 +128,6 @@ export const deleteMaterial = async (req, res) => {
   const { courseId, lessonId, materialId } = req.params;
 
   try {
-    // Kiểm tra xem bài học có tồn tại trong khóa học không
     const [[lesson]] = await pool.query(
       `SELECT * FROM lessons WHERE LessonID = ? AND CourseID = ?`,
       [lessonId, courseId]
@@ -146,7 +139,6 @@ export const deleteMaterial = async (req, res) => {
         .json({ success: false, message: "Lesson not found in this course" });
     }
 
-    // Kiểm tra xem material có tồn tại không
     const [[material]] = await pool.query(
       `SELECT * FROM lessonmaterials WHERE MaterialID = ? AND LessonID = ?`,
       [materialId, lessonId]
@@ -158,7 +150,6 @@ export const deleteMaterial = async (req, res) => {
         .json({ success: false, message: "Material not found" });
     }
 
-    // Xóa material
     await pool.query(
       `DELETE FROM lessonmaterials WHERE MaterialID = ? AND LessonID = ?`,
       [materialId, lessonId]
@@ -175,8 +166,6 @@ export const deleteMaterial = async (req, res) => {
       .json({ success: false, message: "Internal server error" });
   }
 };
-
-// controllers/lessonController.js
 export const getAvailableLessons = async (req, res) => {
   const userId = req.user.userId;
 
@@ -205,7 +194,6 @@ export const getLesson = async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Check if user has access to this lesson (through course enrollment)
     const [lessonAccess] = await pool.query(
       `
       SELECT l.*, c.Title as CourseTitle
@@ -220,11 +208,10 @@ export const getLesson = async (req, res) => {
     if (lessonAccess.length === 0) {
       return res.status(403).json({
         success: false,
-        message: 'You do not have access to this lesson'
+        message: "You do not have access to this lesson",
       });
     }
 
-    // Get lesson details
     const [lessonResult] = await pool.query(
       `
       SELECT 
@@ -246,13 +233,12 @@ export const getLesson = async (req, res) => {
     if (lessonResult.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Lesson not found'
+        message: "Lesson not found",
       });
     }
 
     const lesson = lessonResult[0];
 
-    // Get lesson materials
     const [materials] = await pool.query(
       `
       SELECT MaterialID, MaterialType, URL
@@ -263,7 +249,6 @@ export const getLesson = async (req, res) => {
       [lessonId]
     );
 
-    // Get quizzes for this lesson
     const [quizzes] = await pool.query(
       `
       SELECT QuizID, Title
@@ -274,7 +259,6 @@ export const getLesson = async (req, res) => {
       [lessonId]
     );
 
-    // Get navigation info (previous and next lessons)
     const [navigation] = await pool.query(
       `
       SELECT 
@@ -291,10 +275,13 @@ export const getLesson = async (req, res) => {
       [lesson.CourseID, lesson.OrderNumber, lesson.OrderNumber]
     );
 
-    const previousLesson = navigation.find(l => l.OrderNumber < lesson.OrderNumber);
-    const nextLesson = navigation.find(l => l.OrderNumber > lesson.OrderNumber);
+    const previousLesson = navigation.find(
+      (l) => l.OrderNumber < lesson.OrderNumber
+    );
+    const nextLesson = navigation.find(
+      (l) => l.OrderNumber > lesson.OrderNumber
+    );
 
-    // Get all lessons in course for sidebar navigation
     const [courseLessons] = await pool.query(
       `
       SELECT LessonID, Title, OrderNumber
@@ -305,7 +292,6 @@ export const getLesson = async (req, res) => {
       [lesson.CourseID]
     );
 
-    // Prepare response
     const response = {
       success: true,
       data: {
@@ -317,51 +303,52 @@ export const getLesson = async (req, res) => {
           introduction: lesson.Introduction,
           content: lesson.Content,
           example: lesson.Example,
-          orderNumber: lesson.OrderNumber
+          orderNumber: lesson.OrderNumber,
         },
-        materials: materials.map(material => ({
+        materials: materials.map((material) => ({
           id: material.MaterialID,
           type: material.MaterialType,
-          url: material.URL
+          url: material.URL,
         })),
-        quizzes: quizzes.map(quiz => ({
+        quizzes: quizzes.map((quiz) => ({
           id: quiz.QuizID,
-          title: quiz.Title
+          title: quiz.Title,
         })),
         navigation: {
-          previous: previousLesson ? {
-            id: previousLesson.LessonID,
-            title: previousLesson.Title
-          } : null,
-          next: nextLesson ? {
-            id: nextLesson.LessonID,
-            title: nextLesson.Title
-          } : null
+          previous: previousLesson
+            ? {
+                id: previousLesson.LessonID,
+                title: previousLesson.Title,
+              }
+            : null,
+          next: nextLesson
+            ? {
+                id: nextLesson.LessonID,
+                title: nextLesson.Title,
+              }
+            : null,
         },
-        courseLessons: courseLessons.map(l => ({
+        courseLessons: courseLessons.map((l) => ({
           id: l.LessonID,
           title: l.Title,
           orderNumber: l.OrderNumber,
-          isCurrent: l.LessonID === parseInt(lessonId)
-        }))
-      }
+          isCurrent: l.LessonID === parseInt(lessonId),
+        })),
+      },
     };
 
     res.json(response);
-
   } catch (error) {
-    console.error('Error fetching lesson details:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching lesson details:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
-// GET /api/lessons/:lessonId/materials - Get only materials for a lesson
 export const getLessonMaterials = async (req, res) => {
   const { lessonId } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Check access
     const [hasAccess] = await pool.query(
       `
       SELECT l.LessonID
@@ -376,11 +363,10 @@ export const getLessonMaterials = async (req, res) => {
     if (hasAccess.length === 0) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: "Access denied",
       });
     }
 
-    // Get materials
     const [materials] = await pool.query(
       `
       SELECT MaterialID, MaterialType, URL
@@ -393,26 +379,23 @@ export const getLessonMaterials = async (req, res) => {
 
     res.json({
       success: true,
-      data: materials.map(material => ({
+      data: materials.map((material) => ({
         id: material.MaterialID,
         type: material.MaterialType,
-        url: material.URL
-      }))
+        url: material.URL,
+      })),
     });
-
   } catch (error) {
-    console.error('Error fetching lesson materials:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching lesson materials:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
-// GET /api/lessons/:lessonId/quizzes - Get only quizzes for a lesson
 export const getLessonQuizzes = async (req, res) => {
   const { lessonId } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Check access
     const [hasAccess] = await pool.query(
       `
       SELECT l.LessonID
@@ -427,11 +410,10 @@ export const getLessonQuizzes = async (req, res) => {
     if (hasAccess.length === 0) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied'
+        message: "Access denied",
       });
     }
 
-    // Get quizzes
     const [quizzes] = await pool.query(
       `
       SELECT QuizID, Title
@@ -444,14 +426,13 @@ export const getLessonQuizzes = async (req, res) => {
 
     res.json({
       success: true,
-      data: quizzes.map(quiz => ({
+      data: quizzes.map((quiz) => ({
         id: quiz.QuizID,
-        title: quiz.Title
-      }))
+        title: quiz.Title,
+      })),
     });
-
   } catch (error) {
-    console.error('Error fetching lesson quizzes:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Error fetching lesson quizzes:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };

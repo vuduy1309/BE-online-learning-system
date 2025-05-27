@@ -49,7 +49,9 @@ export const createChatRoom = async (req, res) => {
   const { userId, instructorId } = req.body;
 
   if (!userId || !instructorId) {
-    return res.status(400).json({ success: false, message: "Missing parameters" });
+    return res
+      .status(400)
+      .json({ success: false, message: "Missing parameters" });
   }
 
   try {
@@ -65,4 +67,107 @@ export const createChatRoom = async (req, res) => {
       .status(500)
       .json({ success: false, message: "Failed to create chat room" });
   }
-}
+};
+
+export const getUnreadMessageCounts = async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT 
+          m.ChatRoomID,
+          COUNT(m.MessageID) AS unreadCount
+       FROM messages m
+       LEFT JOIN messagereads mr 
+         ON m.MessageID = mr.MessageID AND mr.UserID = ?
+       WHERE (m.ChatRoomID IN (
+                SELECT ChatRoomID FROM chatrooms WHERE UserID = ? OR InstructorID = ?
+             ))
+         AND m.SenderID != ?
+         AND mr.ReadID IS NULL
+       GROUP BY m.ChatRoomID`,
+      [userId, userId, userId, userId]
+    );
+
+    const unreadCounts = {};
+    rows.forEach((row) => {
+      unreadCounts[row.ChatRoomID] = row.unreadCount;
+    });
+
+    res.json({ success: true, unreadCounts });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch unread message counts",
+      });
+  }
+};
+
+export const markMessagesAsRead = async (req, res) => {
+  const userId = req.user.userId;
+  const { chatRoomId } = req.body;
+
+  try {
+    const [messages] = await pool.query(
+      `SELECT m.MessageID
+       FROM messages m
+       LEFT JOIN messagereads mr ON m.MessageID = mr.MessageID AND mr.UserID = ?
+       WHERE m.ChatRoomID = ? AND m.SenderID != ? AND mr.ReadID IS NULL`,
+      [userId, chatRoomId, userId]
+    );
+
+    if (messages.length === 0) {
+      return res.json({ success: true, message: "No unread messages" });
+    }
+
+    const values = messages.map((m) => [m.MessageID, userId, new Date()]);
+    await pool.query(
+      `INSERT INTO messagereads (MessageID, UserID, ReadAt) VALUES ?`,
+      [values]
+    );
+
+    res.json({
+      success: true,
+      message: "Marked as read",
+      count: messages.length,
+    });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to mark messages as read" });
+  }
+};
+
+export const getTotalUnreadMessages = async (req, res) => {
+  const userId = req.user.userId;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT 
+          COUNT(m.MessageID) AS totalUnread
+       FROM messages m
+       LEFT JOIN messagereads mr 
+         ON m.MessageID = mr.MessageID AND mr.UserID = ?
+       WHERE (m.ChatRoomID IN (
+                SELECT ChatRoomID FROM chatrooms WHERE UserID = ? OR InstructorID = ?
+             ))
+         AND m.SenderID != ?
+         AND mr.ReadID IS NULL`,
+      [userId, userId, userId, userId]
+    );
+
+    res.json({ success: true, totalUnread: rows[0]?.totalUnread || 0 });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch total unread messages",
+      });
+  }
+};

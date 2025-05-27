@@ -37,20 +37,17 @@ io.on("connection", (socket) => {
 
 socket.on("sendMessage", async ({ chatRoomId, senderId, content, imageUrl }) => {
   try {
-    // Thêm tin nhắn vào DB
     const [result] = await pool.query(
       `INSERT INTO messages (ChatRoomID, SenderID, Content, ImageURL) VALUES (?, ?, ?, ?)`,
       [chatRoomId, senderId, content, imageUrl || null]
     );
     const messageId = result.insertId;
 
-    // Lấy thông tin user gửi
     const [[user]] = await pool.query(
       `SELECT FullName FROM users WHERE UserID = ?`,
       [senderId]
     );
 
-    // Lấy lại tin nhắn vừa insert (bao gồm SentAt)
     const [[message]] = await pool.query(
       `SELECT MessageID, SenderID, Content, ImageURL, SentAt FROM messages WHERE MessageID = ?`,
       [messageId]

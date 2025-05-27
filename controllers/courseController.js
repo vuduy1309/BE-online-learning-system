@@ -99,25 +99,21 @@ export const getInstructors = async (req, res) => {
   }
 };
 
-// Cấu hình multer để lưu file
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadPath = "uploads/courses/";
-    // Tạo thư mục nếu chưa tồn tại
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
     }
     cb(null, uploadPath);
   },
   filename: function (req, file, cb) {
-    // Tạo tên file unique
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, "course-" + uniqueSuffix + path.extname(file.originalname));
   },
 });
 
 const fileFilter = (req, file, cb) => {
-  // Chỉ cho phép file ảnh
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -129,7 +125,7 @@ export const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 5 * 1024 * 1024,
   },
 });
 export const createCourse = [
@@ -139,7 +135,6 @@ export const createCourse = [
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      // Nếu có lỗi validate
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -197,12 +192,9 @@ export const updateCourse = async (req, res) => {
   try {
     let ImageURL = req.body.ImageURL;
 
-    // If a new image was uploaded, update the ImageURL
     if (req.file) {
       ImageURL = `/uploads/courses/${req.file.filename}`;
 
-      // If there was a previous image, you may want to delete it
-      // This would require first getting the old image path from the database
       const [oldCourse] = await conn.query(
         `SELECT ImageURL FROM courses WHERE CourseID = ?`,
         [id]
@@ -213,7 +205,6 @@ export const updateCourse = async (req, res) => {
           process.cwd(),
           oldCourse[0].ImageURL.replace("/", "")
         );
-        // Check if file exists before trying to delete
         if (fs.existsSync(oldImagePath)) {
           fs.unlink(oldImagePath, (err) => {
             if (err) console.error("Error deleting old image:", err);
@@ -224,22 +215,18 @@ export const updateCourse = async (req, res) => {
 
     await conn.beginTransaction();
 
-    // Update course details
     const [result] = await conn.query(
       `UPDATE courses SET Title = ?, Description = ?, Price = ?, ImageURL = ?, Status = ? WHERE CourseID = ?`,
       [Title, Description, Price, ImageURL, Status, id]
     );
 
-    // Update instructor if provided
     if (InstructorID) {
-      // First check if there's an existing instructor record
       const [existingInstructor] = await conn.query(
         `SELECT * FROM courseinstructors WHERE CourseID = ?`,
         [id]
       );
 
       if (existingInstructor.length > 0) {
-        // Update existing record
         await conn.query(
           `UPDATE courseinstructors SET InstructorID = ? WHERE CourseID = ?`,
           [InstructorID, id]
@@ -457,5 +444,146 @@ export const enrolledCoures = async (req, res) => {
   }
 };
 
+export const createFeedback = async (req, res) => {
+  const { userId } = req.user;
+  const { courseId, rating, comment } = req.body;
 
+  try {
+    const [[enrollment]] = await pool.query(
+      `SELECT EnrollmentID FROM enrollments WHERE UserID = ? AND CourseID = ?`,
+      [userId, courseId]
+    );
 
+    if (!enrollment) {
+      return res.status(400).json({
+        success: false,
+        message: "You can only review courses you've enrolled in",
+      });
+    }
+
+    const [[existingFeedback]] = await pool.query(
+      `SELECT FeedbackID FROM coursefeedback WHERE UserID = ? AND CourseID = ?`,
+      [userId, courseId]
+    );
+
+    if (existingFeedback) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already reviewed this course",
+      });
+    }
+
+    await pool.query(
+      `INSERT INTO coursefeedback (UserID, CourseID, Rating, Comment, ReviewDate) 
+       VALUES (?, ?, ?, ?, NOW())`,
+      [userId, courseId, rating, comment]
+    );
+
+    res.json({
+      success: true,
+      message: "Feedback submitted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to submit feedback",
+    });
+  }
+};
+
+export const updateFeedback = async (req, res) => {
+  const { userId } = req.user;
+  const { feedbackId } = req.params;
+  const { rating, comment } = req.body;
+
+  try {
+    const [[feedback]] = await pool.query(
+      `SELECT FeedbackID FROM coursefeedback WHERE FeedbackID = ? AND UserID = ?`,
+      [feedbackId, userId]
+    );
+
+    if (!feedback) {
+      return res.status(404).json({
+        success: false,
+        message: "Feedback not found or unauthorized",
+      });
+    }
+
+    await pool.query(
+      `UPDATE coursefeedback SET Rating = ?, Comment = ? WHERE FeedbackID = ?`,
+      [rating, comment, feedbackId]
+    );
+
+    res.json({
+      success: true,
+      message: "Feedback updated successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update feedback",
+    });
+  }
+};
+
+export const deleteFeedback = async (req, res) => {
+  const { userId } = req.user;
+  const { feedbackId } = req.params;
+
+  try {
+    const [[feedback]] = await pool.query(
+      `SELECT FeedbackID FROM coursefeedback WHERE FeedbackID = ? AND UserID = ?`,
+      [feedbackId, userId]
+    );
+
+    if (!feedback) {
+      return res.status(404).json({
+        success: false,
+        message: "Feedback not found or unauthorized",
+      });
+    }
+
+    // Delete feedback
+    await pool.query(`DELETE FROM coursefeedback WHERE FeedbackID = ?`, [
+      feedbackId,
+    ]);
+
+    res.json({
+      success: true,
+      message: "Feedback deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete feedback",
+    });
+  }
+};
+
+export const getMyFeedbackForCourse = async (req, res) => {
+  const { userId } = req.user;
+  const { courseId } = req.params;
+
+  try {
+    const [[feedback]] = await pool.query(
+      `SELECT FeedbackID, Rating, Comment, ReviewDate
+       FROM coursefeedback
+       WHERE UserID = ? AND CourseID = ?`,
+      [userId, courseId]
+    );
+
+    if (!feedback) {
+      return res.json({ success: true, feedback: null });
+    }
+
+    res.json({ success: true, feedback });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch feedback" });
+  }
+};

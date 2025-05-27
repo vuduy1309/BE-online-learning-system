@@ -1,11 +1,21 @@
 import pool from "../config/db.js";
 
 export const addToCart = async (req, res) => {
-  const { userId } = req.user; // assuming JWT middleware extracts this
+  const { userId } = req.user;
   const { courseId } = req.body;
 
   try {
-    // 1. Kiểm tra cart đang hoạt động (Status = 'pending')
+    const [[enrollment]] = await pool.query(
+      `SELECT EnrollmentID FROM enrollments WHERE UserID = ? AND CourseID = ?`,
+      [userId, courseId]
+    );
+
+    if (enrollment) {
+      return res
+        .status(400)
+        .json({ message: "You have already purchased this course." });
+    }
+
     const [[cart]] = await pool.query(
       `SELECT * FROM carts WHERE UserID = ? AND Status = 'pending'`,
       [userId]
@@ -20,23 +30,20 @@ export const addToCart = async (req, res) => {
       cartId = result.insertId;
     }
 
-    // 2. Kiểm tra nếu course đã có trong giỏ
     const [[existingItem]] = await pool.query(
       `SELECT * FROM cartitems WHERE CartID = ? AND CourseID = ?`,
       [cartId, courseId]
     );
     if (existingItem) {
-      return res.status(400).json({ message: "Course already in cart" });
+      return res.status(400).json({ message: "Course is already in cart" });
     }
 
-    // 3. Lấy giá khóa học
     const [[course]] = await pool.query(
       `SELECT Price FROM courses WHERE CourseID = ?`,
       [courseId]
     );
-    if (!course) return res.status(404).json({ message: "Course not found" });
+    if (!course) return res.status(404).json({ message: "Not found course" });
 
-    // 4. Thêm vào cartitem và cập nhật tổng tiền
     await pool.query(
       `INSERT INTO cartitems (CartID, CourseID, Price) VALUES (?, ?, ?)`,
       [cartId, courseId, course.Price]
@@ -47,10 +54,10 @@ export const addToCart = async (req, res) => {
       [course.Price, cartId]
     );
 
-    res.json({ message: "Course added to cart successfully" });
+    res.json({ success: true, message: "Course added to cart" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to add to cart" });
+    res.status(500).json({ success: false, message: "Cannot add to cart" });
   }
 };
 
@@ -59,14 +66,23 @@ export const buyNow = async (req, res) => {
   const { courseId } = req.body;
 
   try {
-    // 1. Lấy thông tin khóa học
+    const [[enrollment]] = await pool.query(
+      `SELECT EnrollmentID FROM enrollments WHERE UserID = ? AND CourseID = ?`,
+      [userId, courseId]
+    );
+
+    if (enrollment) {
+      return res
+        .status(400)
+        .json({ message: "You have already purchased this course." });
+    }
+
     const [[course]] = await pool.query(
       `SELECT * FROM courses WHERE CourseID = ?`,
       [courseId]
     );
-    if (!course) return res.status(404).json({ message: "Course not found" });
+    if (!course) return res.status(404).json({ message: "No course found" });
 
-    // 2. Tạo cart mới với status = 'buy_now' để phân biệt với cart thông thường
     const [cartResult] = await pool.query(
       `INSERT INTO carts (UserID, Status, TotalPrice, CreateAt) VALUES (?, 'buy_now', ?, NOW())`,
       [userId, course.Price]
@@ -74,31 +90,36 @@ export const buyNow = async (req, res) => {
 
     const cartId = cartResult.insertId;
 
-    // 3. Thêm course vào cartitem
     await pool.query(
       `INSERT INTO cartitems (CartID, CourseID, Price) VALUES (?, ?, ?)`,
       [cartId, courseId, course.Price]
     );
 
-    // 4. Trả về cartId để redirect sang trang confirm
-    res.json({ message: "Ready for checkout", cartId });
+    res.json({
+      success: true,
+      message: "Ready to pay",
+      cartId,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to process buy now request" });
+    res.status(500).json({
+      success: false,
+      message: "Unable to process purchase request",
+    });
   }
 };
 
 export const getCart = async (req, res) => {
   const { userId } = req.user;
-  
+
   try {
     const [[cart]] = await pool.query(
       `SELECT * FROM carts WHERE UserID = ? AND Status = 'pending'`,
       [userId]
     );
-    
+
     if (!cart) return res.json({ items: [], totalPrice: 0 });
-    
+
     const [items] = await pool.query(
       `SELECT 
         ci.CartItemID, 
@@ -112,17 +133,17 @@ export const getCart = async (req, res) => {
       WHERE ci.CartID = ?`,
       [cart.CartID]
     );
-    
-    // Ensure ImageURL is properly formatted
-    const formattedItems = items.map(item => ({
+
+    const formattedItems = items.map((item) => ({
       ...item,
-      // Make sure ImageURL starts with a slash if it's a relative path
-      // This will ensure the Image component can properly format it
-      ImageURL: item.ImageURL && !item.ImageURL.startsWith('/') && !item.ImageURL.startsWith('http') 
-        ? `/${item.ImageURL}` 
-        : item.ImageURL
+      ImageURL:
+        item.ImageURL &&
+        !item.ImageURL.startsWith("/") &&
+        !item.ImageURL.startsWith("http")
+          ? `/${item.ImageURL}`
+          : item.ImageURL,
     }));
-    
+
     res.json({ items: formattedItems, totalPrice: cart.TotalPrice });
   } catch (err) {
     console.error(err);
@@ -132,25 +153,22 @@ export const getCart = async (req, res) => {
 
 export const getCheckoutDetails = async (req, res) => {
   const { userId } = req.user;
-  const { cartId } = req.query; // Allow passing a specific cartId
+  const { cartId } = req.query;
 
   try {
     let query = `SELECT * FROM carts WHERE UserID = ? AND `;
     let params = [userId];
 
     if (cartId) {
-      // If cartId provided, get that specific cart (buy now flow)
       query += `CartID = ? AND (Status = 'pending' OR Status = 'buy_now')`;
       params.push(cartId);
     } else {
-      // Regular flow - just get the pending cart
       query += `Status = 'pending'`;
     }
 
     const [[cart]] = await pool.query(query, params);
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-    // Add Description to the SELECT statement
     const [items] = await pool.query(
       `SELECT ci.CartItemID, ci.CourseID, ci.Price, 
               c.Title, c.ImageURL, c.Description 
@@ -164,5 +182,66 @@ export const getCheckoutDetails = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch checkout data" });
+  }
+};
+
+export const removeFromCart = async (req, res) => {
+  const { userId } = req.user;
+  const { courseId } = req.body;
+
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+
+  try {
+    const [[cart]] = await conn.query(
+      `SELECT * FROM carts WHERE UserID = ? AND Status = 'pending'`,
+      [userId]
+    );
+
+    if (!cart) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Cart not found",
+      });
+    }
+
+    const [[cartItem]] = await conn.query(
+      `SELECT * FROM cartitems WHERE CartID = ? AND CourseID = ?`,
+      [cart.CartID, courseId]
+    );
+
+    if (!cartItem) {
+      await conn.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Course not found in cart",
+      });
+    }
+
+    await conn.query(
+      `DELETE FROM cartitems WHERE CartID = ? AND CourseID = ?`,
+      [cart.CartID, courseId]
+    );
+
+    await conn.query(
+      `UPDATE carts SET TotalPrice = TotalPrice - ? WHERE CartID = ?`,
+      [cartItem.Price, cart.CartID]
+    );
+
+    await conn.commit();
+    res.json({
+      success: true,
+      message: "Course removed from cart",
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to remove course from cart",
+    });
+  } finally {
+    conn.release();
   }
 };

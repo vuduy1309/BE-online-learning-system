@@ -62,10 +62,9 @@ export const viewQuizByLessonId = async (req, res) => {
         [question.QuestionID]
       );
 
-      // Chuyển IsCorrect từ Buffer -> boolean
       question.AnswerOptions = options.map((option) => ({
         ...option,
-        IsCorrect: !!option.IsCorrect?.[0], // Ép kiểu
+        IsCorrect: !!option.IsCorrect?.[0],
       }));
     }
 
@@ -176,7 +175,6 @@ export const getQuizById = async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Check if the user is enrolled in the course this quiz belongs to
     const [enrollCheck] = await pool.query(
       `
       SELECT q.QuizID
@@ -193,7 +191,6 @@ export const getQuizById = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    // Get quiz info
     const [[quiz]] = await pool.query(
       `SELECT QuizID, Title FROM quizzes WHERE QuizID = ?`,
       [quizId]
@@ -205,19 +202,16 @@ export const getQuizById = async (req, res) => {
         .json({ success: false, message: "Quiz not found" });
     }
 
-    // Get questions
     const [questions] = await pool.query(
       `SELECT QuestionID, Content, ImageURL FROM questions WHERE QuizID = ?`,
       [quizId]
     );
 
-    // Get all options
     const [allOptions] = await pool.query(
       `SELECT OptionID, QuestionID, Content FROM answeroptions WHERE QuestionID IN (?)`,
       [questions.map((q) => q.QuestionID)]
     );
 
-    // Combine questions with their options
     const formattedQuestions = questions.map((question) => ({
       questionId: question.QuestionID,
       content: question.Content,
@@ -247,13 +241,12 @@ export const getQuizById = async (req, res) => {
 export const takeQuiz = async (req, res) => {
   const { quizId } = req.params;
   const userId = req.user.userId;
-  const { answers } = req.body; // [{ questionId, selectedOptionId }]
+  const { answers } = req.body;
 
   const conn = await pool.getConnection();
   await conn.beginTransaction();
 
   try {
-    // Tính điểm
     let correctCount = 0;
 
     for (const answer of answers) {
@@ -275,7 +268,6 @@ export const takeQuiz = async (req, res) => {
     const totalQuestions = answers.length;
     const score = (correctCount / totalQuestions) * 100;
 
-    // Insert userquizattempts
     const [attemptResult] = await conn.query(
       `INSERT INTO userquizattempts (UserID, QuizID, Score, AttemptDate)
        VALUES (?, ?, ?, NOW())`,
@@ -284,7 +276,6 @@ export const takeQuiz = async (req, res) => {
 
     const attemptId = attemptResult.insertId;
 
-    // Insert từng câu trả lời vào useranswers
     for (const answer of answers) {
       await conn.query(
         `INSERT INTO useranswers (AttemptID, QuestionID, SelectedOptionID)
@@ -314,19 +305,16 @@ export const takeQuiz = async (req, res) => {
   }
 };
 
-
 export const getLessonQuizScores = async (req, res) => {
   const { lessonId } = req.params;
   const userId = req.user.userId;
 
   try {
-    // Lấy danh sách quiz của lesson
     const [quizzes] = await pool.query(
       `SELECT QuizID, Title FROM quizzes WHERE LessonID = ?`,
       [lessonId]
     );
 
-    // Lấy điểm số gần nhất và tốt nhất của user cho từng quiz
     const [scores] = await pool.query(
       `SELECT 
           QuizID, 
@@ -338,7 +326,6 @@ export const getLessonQuizScores = async (req, res) => {
       [userId, userId, lessonId]
     );
 
-    // Gộp dữ liệu
     const quizList = quizzes.map((q) => {
       const score = scores.find((s) => s.QuizID === q.QuizID) || {};
       return {
@@ -363,13 +350,11 @@ export const getUserQuizHistory = async (req, res) => {
   const userId = req.user.userId;
 
   try {
-    // Lấy lịch sử làm quiz của user
     const [attempts] = await pool.query(
       `SELECT AttemptID, Score, AttemptDate FROM userquizattempts WHERE QuizID = ? AND UserID = ? ORDER BY AttemptDate DESC`,
       [quizId, userId]
     );
 
-    // Lấy chi tiết câu trả lời cho từng attempt
     for (const attempt of attempts) {
       const [answers] = await pool.query(
         `SELECT ua.QuestionID, q.Content AS QuestionContent, ua.SelectedOptionID, ao.Content AS SelectedOptionContent, ao.IsCorrect
@@ -396,5 +381,44 @@ export const getUserQuizHistory = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Failed to fetch user quiz history" });
+  }
+};
+
+export const getLessonQuizAttempts = async (req, res) => {
+  const { lessonId } = req.params;
+
+  try {
+    const [attempts] = await pool.query(
+      `SELECT 
+        ua.AttemptID,
+        u.FullName as StudentName, 
+        q.Title as QuizTitle,
+        ua.Score,
+        (SELECT COUNT(*) FROM questions WHERE QuizID = q.QuizID) as TotalQuestions,
+        ua.AttemptDate
+      FROM userquizattempts ua
+      JOIN users u ON ua.UserID = u.UserID
+      JOIN quizzes q ON ua.QuizID = q.QuizID
+      WHERE q.LessonID = ?
+        AND ua.Score = (
+          SELECT MAX(Score) 
+          FROM userquizattempts ua2 
+          WHERE ua2.UserID = ua.UserID 
+          AND ua2.QuizID = ua.QuizID
+        )
+      ORDER BY ua.Score DESC, ua.AttemptDate DESC`,
+      [lessonId]
+    );
+
+    res.json({
+      success: true,
+      attempts: attempts,
+    });
+  } catch (error) {
+    console.error("Error fetching lesson quiz attempts:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch lesson quiz attempts",
+    });
   }
 };

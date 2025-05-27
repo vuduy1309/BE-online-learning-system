@@ -12,6 +12,10 @@ import {
   getCoursesByInstructor,
   viewLessons,
   enrolledCoures,
+  createFeedback,
+  updateFeedback,
+  deleteFeedback,
+  getMyFeedbackForCourse,
 } from "../controllers/courseController.js";
 
 import { authenticateToken } from "../middlewares/authMiddleware.js";
@@ -29,22 +33,14 @@ const router = Router();
 router.get("/enrollments/my-courses", authenticateToken, enrolledCoures);
 router.get("/instructors", getInstructors);
 router.get("/listCourse", authenticateToken, authorizeRole(2), getListCourses);
-router.get(
-  "/:id/lessons",
-  validateIdParam,
-  authenticateToken,
-  viewLessons
-);
+router.get("/:id/lessons", validateIdParam, authenticateToken, viewLessons);
 router.get(
   "/instructorCourses",
   authenticateToken,
   authorizeRole(3),
   getCoursesByInstructor
 );
-router.get(
-  "/getCourseById/:id",
-  getCourseById
-);
+router.get("/getCourseById/:id", getCourseById);
 router.get("/", getCourses);
 router.get("/:id", validateIdParam, getCourseDetails);
 
@@ -71,6 +67,9 @@ router.get(
   getCourseFeedback,
   authorizeRole(2)
 );
-
+router.get("/feedback/course/:courseId", authenticateToken, getMyFeedbackForCourse);
+router.post("/feedback/create", authenticateToken, createFeedback);
+router.put("/feedback/:feedbackId", authenticateToken, updateFeedback);
+router.delete("/feedback/:feedbackId", authenticateToken, deleteFeedback);
 
 export default router;

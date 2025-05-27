@@ -29,10 +29,10 @@ export const getAllUsers = async (req, res) => {
     );
     res.json(users);
   } catch (error) {
-    console.error("Error fetching users:", error); // Log chi tiết lỗi trên server
+    console.error("Error fetching users:", error); 
     res.status(500).json({
       message: "Failed to fetch users",
-      error: error.message, // Gửi thông báo lỗi cụ thể
+      error: error.message, 
     });
   }
 };

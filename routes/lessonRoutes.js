@@ -2,7 +2,6 @@ import express from "express";
 import {
   addMaterial,
   deleteMaterial,
-  getAvailableLessons,
   getLesson,
   getLessonDetails,
   getLessonMaterials,

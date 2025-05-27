@@ -5,15 +5,12 @@ export const confirmOrder = async (req, res) => {
   const { cartId, paymentMethod } = req.body;
 
   try {
-    // Lấy lại cart để đảm bảo đúng trạng thái (có thể là cart pending hoặc buy_now)
     const [[cart]] = await pool.query(
       `SELECT * FROM carts WHERE CartID = ? AND UserID = ? AND (Status = 'pending' OR Status = 'buy_now')`,
       [cartId, userId]
     );
 
     if (!cart) return res.status(400).json({ message: "Cart not valid" });
-
-    // Tạo order
     const [orderResult] = await pool.query(
       `INSERT INTO orders (UserID, OrderDate, TotalAmount, PaymentStatus, PaymentMethod) 
        VALUES (?, NOW(), ?, 'pending', ?)`,
@@ -22,7 +19,6 @@ export const confirmOrder = async (req, res) => {
 
     const orderId = orderResult.insertId;
 
-    // Copy cartitems vào orderdetails
     const [items] = await pool.query(
       `SELECT CourseID, Price FROM cartitems WHERE CartID = ?`,
       [cartId]
@@ -35,7 +31,6 @@ export const confirmOrder = async (req, res) => {
       );
     }
 
-    // Cập nhật trạng thái cart
     await pool.query(
       `UPDATE carts SET Status = 'checked_out' WHERE CartID = ?`,
       [cartId]
@@ -75,28 +70,23 @@ export const updateOrderSatus = async (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
   try {
-    // 1. Cập nhật trạng thái
-    await pool.query(
-      `UPDATE orders SET PaymentStatus = ? WHERE OrderID = ?`,
-      [status, orderId]
-    );
+    await pool.query(`UPDATE orders SET PaymentStatus = ? WHERE OrderID = ?`, [
+      status,
+      orderId,
+    ]);
 
-    // 2. Nếu là "paid", thì enroll user vào các khóa học
-    if (status === 'paid') {
-      // Lấy UserID từ đơn hàng
+    if (status === "paid") {
       const [[order]] = await pool.query(
         `SELECT UserID FROM orders WHERE OrderID = ?`,
         [orderId]
       );
       const userId = order.UserID;
 
-      // Lấy danh sách khóa học
       const [courseList] = await pool.query(
         `SELECT CourseID FROM orderdetails WHERE OrderID = ?`,
         [orderId]
       );
 
-      // Enroll từng khóa học
       for (const { CourseID } of courseList) {
         await pool.query(
           `INSERT IGNORE INTO enrollments (UserID, CourseID) VALUES (?, ?)`,
@@ -111,7 +101,6 @@ export const updateOrderSatus = async (req, res) => {
     res.status(500).json({ message: "Failed to update status" });
   }
 };
-
 
 export const viewOrderDetails = async (req, res) => {
   const { orderId } = req.params;
@@ -139,4 +128,3 @@ export const viewOrderDetails = async (req, res) => {
     res.status(500).json({ message: "Failed to view order details" });
   }
 };
-

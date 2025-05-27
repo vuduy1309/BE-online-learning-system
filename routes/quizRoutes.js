@@ -7,7 +7,8 @@ import {
   getQuizById,
   takeQuiz,
   getLessonQuizScores,
-  getUserQuizHistory, // thêm hàm mới
+  getUserQuizHistory,
+  getLessonQuizAttempts,
 } from "../controllers/quizController.js";
 import { authenticateToken } from "../middlewares/authMiddleware.js";
 import { authorizeRole } from "../middlewares/roleMiddleware.js";
@@ -27,5 +28,5 @@ router.get('/:quizId/view', authenticateToken, authorizeRole(4) , getQuizById);
 router.post('/:quizId/take', authenticateToken, authorizeRole(4), takeQuiz);
 router.get("/:lessonId/quiz-scores", authenticateToken, authorizeRole(4), getLessonQuizScores);
 router.get("/:quizId/user-history", authenticateToken, authorizeRole(4), getUserQuizHistory);
-
+router.get("/:lessonId/quiz-attempts", authenticateToken, getLessonQuizAttempts)
 export default router;
