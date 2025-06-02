@@ -12,9 +12,9 @@ export const confirmOrder = async (req, res) => {
 
     if (!cart) return res.status(400).json({ message: "Cart not valid" });
     const [orderResult] = await pool.query(
-      `INSERT INTO orders (UserID, OrderDate, TotalAmount, PaymentStatus, PaymentMethod) 
-       VALUES (?, NOW(), ?, 'pending', ?)`,
-      [userId, cart.TotalPrice, paymentMethod]
+      `INSERT INTO orders (UserID, CartID, OrderDate, TotalAmount, PaymentStatus, PaymentMethod) 
+       VALUES (?, ?, NOW(), ?, 'pending', ?)`,
+      [userId, cartId, cart.TotalPrice, paymentMethod]
     );
 
     const orderId = orderResult.insertId;

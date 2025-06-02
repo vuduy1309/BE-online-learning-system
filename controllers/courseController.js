@@ -232,7 +232,6 @@ export const updateCourse = async (req, res) => {
           [InstructorID, id]
         );
       } else {
-        // Create new record
         await conn.query(
           `INSERT INTO courseinstructors (CourseID, InstructorID) VALUES (?, ?)`,
           [id, InstructorID]
@@ -254,7 +253,6 @@ export const updateCourse = async (req, res) => {
     await conn.rollback();
     console.error("Error updating course:", error);
 
-    // If there was an error and we uploaded a new file, delete it
     if (req.file) {
       fs.unlink(req.file.path, (unlinkErr) => {
         if (unlinkErr) console.error("Error deleting file:", unlinkErr);
@@ -545,7 +543,6 @@ export const deleteFeedback = async (req, res) => {
       });
     }
 
-    // Delete feedback
     await pool.query(`DELETE FROM coursefeedback WHERE FeedbackID = ?`, [
       feedbackId,
     ]);
