@@ -72,7 +72,22 @@ export const vnpayReturn = async (req, res) => {
         `UPDATE carts SET Status = 'checked_out' WHERE CartID = ?`,
         [cartId]
       );
-      return res.redirect("/payment-success"); 
+      const [[orderInfo]] = await pool.query(
+        `SELECT UserID FROM orders WHERE OrderID = ?`,
+        [order.OrderID]
+      );
+      const userId = orderInfo.UserID;
+      const [courseList] = await pool.query(
+        `SELECT CourseID FROM orderdetails WHERE OrderID = ?`,
+        [order.OrderID]
+      );
+      for (const { CourseID } of courseList) {
+        await pool.query(
+          `INSERT IGNORE INTO enrollments (UserID, CourseID) VALUES (?, ?)` ,
+          [userId, CourseID]
+        );
+      }
+      return res.redirect("http://localhost:3000/payment-success"); 
     } else {
       await pool.query(
         `UPDATE orders SET PaymentStatus = 'failed' WHERE OrderID = ?`,
@@ -82,7 +97,7 @@ export const vnpayReturn = async (req, res) => {
         `UPDATE carts SET Status = 'pending' WHERE CartID = ?`,
         [cartId]
       );
-      return res.redirect("/payment-failed");
+      return res.redirect("http://localhost:3000/payment-failed");
     }
   } catch (err) {
     console.error(err);

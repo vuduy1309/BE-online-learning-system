@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   confirmOrder,
   getAllOrders,
+  getOrdersByUserID,
   updateOrderSatus,
   viewOrderDetails,
 } from "../controllers/orderController.js";
@@ -24,5 +25,6 @@ router.get(
   authorizeRole(2, 4),
   viewOrderDetails
 );
+router.post("/viewOrderHistory/:userId", authenticateToken, authorizeRole(4), getOrdersByUserID );
 
 export default router;

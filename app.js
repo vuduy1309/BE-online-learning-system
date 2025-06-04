@@ -11,6 +11,7 @@ import lessonRoutes from "./routes/lessonRoutes.js";
 import quizRoutes from "./routes/quizRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import chatbotRoutes from "./routes/chatbotRoutes.js";
 import chatSocket from "./socket/chatSocket.js";
 config();
 
@@ -28,6 +29,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api", lessonRoutes);
 app.use("/api/quizzes", quizRoutes);
 app.use("/api", chatRoutes);
+app.use("/api/chatbot", chatbotRoutes);
 app.use("/uploads", express.static("uploads"));
 chatSocket(io);
 

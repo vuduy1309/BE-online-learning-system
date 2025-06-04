@@ -66,6 +66,30 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
+export const getOrdersByUserID = async (req, res) => {
+  try {
+    const [orders] = await pool.query(
+      `
+  SELECT 
+    o.OrderID,
+    o.OrderDate,
+    o.TotalAmount,
+    o.PaymentStatus,
+    o.PaymentMethod
+  FROM orders o
+  WHERE o.UserID = ?
+  ORDER BY o.OrderDate DESC
+`,
+      [req.params.userId]
+    );
+
+    res.json(orders);
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
+
 export const updateOrderSatus = async (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
