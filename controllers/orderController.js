@@ -4,18 +4,30 @@ export const confirmOrder = async (req, res) => {
   const { userId } = req.user;
   const { cartId, paymentMethod } = req.body;
 
+  console.log("confirmOrder called with:", { userId, cartId, paymentMethod });
+
   try {
     const [[cart]] = await pool.query(
       `SELECT * FROM carts WHERE CartID = ? AND UserID = ? AND (Status = 'pending' OR Status = 'buy_now')`,
       [cartId, userId]
     );
+    console.log("Cart found:", cart);
 
     if (!cart) return res.status(400).json({ message: "Cart not valid" });
+
+    const totalAmount = Number(cart.TotalPrice);
+    console.log("Total amount for order:", totalAmount);
+
+    if (isNaN(totalAmount)) {
+      return res.status(400).json({ message: "Cart total price is invalid" });
+    }
+
     const [orderResult] = await pool.query(
       `INSERT INTO orders (UserID, CartID, OrderDate, TotalAmount, PaymentStatus, PaymentMethod) 
        VALUES (?, ?, NOW(), ?, 'pending', ?)`,
-      [userId, cartId, cart.TotalPrice, paymentMethod]
+      [userId, cartId, totalAmount, paymentMethod]
     );
+    console.log("Inserted order with ID:", orderResult.insertId);
 
     const orderId = orderResult.insertId;
 
@@ -23,8 +35,10 @@ export const confirmOrder = async (req, res) => {
       `SELECT CourseID, Price FROM cartitems WHERE CartID = ?`,
       [cartId]
     );
+    console.log("Cart items:", items);
 
     for (const item of items) {
+      console.log("Inserting order detail for item:", item);
       await pool.query(
         `INSERT INTO orderdetails (OrderID, CourseID, Price) VALUES (?, ?, ?)`,
         [orderId, item.CourseID, item.Price]
@@ -38,7 +52,7 @@ export const confirmOrder = async (req, res) => {
 
     res.json({ message: "Order confirmed", orderId });
   } catch (err) {
-    console.error(err);
+    console.error("Error confirmOrder:", err);
     res.status(500).json({ error: "Failed to confirm order" });
   }
 };

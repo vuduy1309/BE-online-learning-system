@@ -189,59 +189,51 @@ export const removeFromCart = async (req, res) => {
   const { userId } = req.user;
   const { courseId } = req.body;
 
-  const conn = await pool.getConnection();
-  await conn.beginTransaction();
-
+  let conn;
   try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
     const [[cart]] = await conn.query(
       `SELECT * FROM carts WHERE UserID = ? AND Status = 'pending'`,
       [userId]
     );
-
     if (!cart) {
       await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Cart not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Cart not found" });
     }
 
     const [[cartItem]] = await conn.query(
       `SELECT * FROM cartitems WHERE CartID = ? AND CourseID = ?`,
       [cart.CartID, courseId]
     );
-
     if (!cartItem) {
       await conn.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Course not found in cart",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Course not found in cart" });
     }
 
     await conn.query(
       `DELETE FROM cartitems WHERE CartID = ? AND CourseID = ?`,
       [cart.CartID, courseId]
     );
-
     await conn.query(
-      `UPDATE carts SET TotalPrice = TotalPrice - ? WHERE CartID = ?`,
+      `UPDATE carts SET TotalPrice = GREATEST(TotalPrice - ?, 0) WHERE CartID = ?`,
       [cartItem.Price, cart.CartID]
     );
 
     await conn.commit();
-    res.json({
-      success: true,
-      message: "Course removed from cart",
-    });
+    res.json({ success: true, message: "Course removed from cart" });
   } catch (err) {
-    await conn.rollback();
+    if (conn) await conn.rollback();
     console.error(err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to remove course from cart",
-    });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to remove course from cart" });
   } finally {
-    conn.release();
+    if (conn) conn.release();
   }
 };

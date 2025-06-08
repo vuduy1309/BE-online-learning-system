@@ -49,7 +49,6 @@ router.post(
   upload.single("image"),
   validateCourse,
   handleValidationErrors,
-  authorizeRole(2),
   createCourse
 );
 
